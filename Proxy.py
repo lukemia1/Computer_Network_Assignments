@@ -120,7 +120,8 @@ while True:
     # ProxyServer finds a cache hit
     # Send back response to client 
     # ~~~~ INSERT CODE ~~~~
-    response = """HTTP/1.1 200 OK"""
+    response = "HTTP/1.1 200 OK" + cacheData
+    clientSocket.sendall(response.encode())
     # ~~~~ END CODE INSERT ~~~~
     cacheFile.close()
     print ('Sent to the client:')
@@ -132,7 +133,6 @@ while True:
     # and store in originServerSocket
     # ~~~~ INSERT CODE ~~~~
     originServerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
     # ~~~~ END CODE INSERT ~~~~
 
     print ('Connecting to:\t\t' + hostname + '\n')
@@ -152,8 +152,8 @@ while True:
       # originServerRequest is the first line in the request and
       # originServerRequestHeader is the second line in the request
       # ~~~~ INSERT CODE ~~~~
-      originServerRequest = 'GET ' + resource + ' HTTP/1.1\r\n'
-      originServerRequestHeader = 'Host: ' + hostname + '\r\n'
+      originServerRequest = 'GET ' + resource + ' HTTP/1.1'
+      originServerRequestHeader = 'Host: ' + hostname
       # ~~~~ END CODE INSERT ~~~~
 
       # Construct the request to send to the origin server
@@ -174,12 +174,12 @@ while True:
 
       # Get the response from the origin server
       # ~~~~ INSERT CODE ~~~~
-      originServerResponse = ''
+      originServerResponse = originServerSocket.recv(4096)
       # ~~~~ END CODE INSERT ~~~~
 
       # Send the response to the client
       # ~~~~ INSERT CODE ~~~~
-      clientSocket.sendall(originServerResponse.encode())
+      clientSocket.sendall(originServerResponse)
       # ~~~~ END CODE INSERT ~~~~
 
       # Create a new file in the cache for the requested file.
@@ -191,7 +191,7 @@ while True:
 
       # Save origin server response in the cache file
       # ~~~~ INSERT CODE ~~~~
-      cacheFile.write(originServerResponse.encode())
+      cacheFile.write(originServerResponse)
       # ~~~~ END CODE INSERT ~~~~
       cacheFile.close()
       print ('cache file closed')
