@@ -140,8 +140,7 @@ while True:
       print ('> ' + cacheData)
     else:
        print("Cache miss: No cached response to send.")
-    # ~~~~ END CODE INSERT ~~~~
-      
+    # ~~~~ END CODE INSERT ~~~~   
   except Exception as e:
     print("\n*** Cache Error Traceback ***")
     traceback.print_exc()  # Prints full traceback to stderr
@@ -149,10 +148,9 @@ while True:
     # Log detailed error (alternative to printing)
     error_msg = f"Cache error at {cacheLocation}:\n{traceback.format_exc()}"
     print(error_msg, file=sys.stderr)
-
-
+  try:
     # cache miss.  Get resource from origin server
-    # originServerSocket = None
+    originServerSocket = None
     # Create a socket to connect to origin server
     # and store in originServerSocket
     # ~~~~ INSERT CODE ~~~~
@@ -160,13 +158,13 @@ while True:
       originServerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
       print("Created new socket for origin server")
     # ~~~~ END CODE INSERT ~~~~
-
     except Exception as socket_error:
         print("\n*** Socket Creation Failed ***")
         traceback.print_exc()
         raise
 
     print ('Connecting to:\t\t' + hostname + '\n')
+
     try:
       # Get the IP address for a hostname
       address = socket.gethostbyname(hostname)
@@ -175,90 +173,100 @@ while True:
       originServerSocket.connect((address, 80))
       # ~~~~ END CODE INSERT ~~~~
       print ('Connected to origin Server')
+    
+    except socket.error as connect_error:
+      print(f"Connection failed: {connect_error}")
+      originServerSocket.close()  # Close the socket before exiting
+      raise 
 
-      originServerRequest = request_line
-      originServerRequestHeader = ''
-      # Create origin server request line and headers to send
-      # and store in originServerRequestHeader and originServerRequest
-      # originServerRequest is the first line in the request and
-      # originServerRequestHeader is the second line in the request
-      # ~~~~ INSERT CODE ~~~~
-      for header in headers:
-        if header.lower().startswith("host:"):
-          hostname = header.split(": ", 1)[1]  # Extract the hostname
-        originServerRequestHeader += header + '\r\n'
-      # ~~~~ END CODE INSERT ~~~~
+    originServerRequest = request_line
+    originServerRequestHeader = ''
+    # Create origin server request line and headers to send
+    # and store in originServerRequestHeader and originServerRequest
+    # originServerRequest is the first line in the request and
+    # originServerRequestHeader is the second line in the request
+    # ~~~~ INSERT CODE ~~~~
+    for header in headers:
+      if header.lower().startswith("host:"):
+        hostname = header.split(": ", 1)[1]  # Extract the hostname
+      originServerRequestHeader += header + '\r\n'
+    # ~~~~ END CODE INSERT ~~~~
 
-      # Construct the request to send to the origin server
-      request = originServerRequest + '\r\n' + originServerRequestHeader + '\r\n'
+    # Construct the request to send to the origin server
+    request = originServerRequest + '\r\n' + originServerRequestHeader + '\r\n'
 
-      # Request the web resource from origin server
-      print ('Forwarding request to origin server:')
-      for line in request.split('\r\n'):
-        print ('> ' + line)
+    # Request the web resource from origin server
+    print ('Forwarding request to origin server:')
+    for line in request.split('\r\n'):
+      print ('> ' + line)
 
-      try:
-        originServerSocket.sendall(request.encode())
-      except socket.error:
-        print ('Forward request to origin failed')
-        sys.exit()
+    try:
+      originServerSocket.sendall(request.encode())
+    except socket.error:
+      print ('Forward request to origin failed')
+      sys.exit()
 
-      print('Request sent to origin server\n')
+    print('Request sent to origin server\n')
 
-      # Get the response from the origin server
-      # ~~~~ INSERT CODE ~~~~
-      originServerResponse = originServerSocket.recv(4096).decode('utf-8')
-      headers, body = originServerResponse.split('\r\n\r\n', 1)
+    # Get the response from the origin server
+    # ~~~~ INSERT CODE ~~~~
+    originServerResponse = originServerSocket.recv(4096).decode('utf-8')
+    headers, body = originServerResponse.split('\r\n\r\n', 1)
+    
+    # Check for Cache-Control header
+    cache_control = None
+    for header in headers.split('\r\n'):
+        if header.lower().startswith('cache-control:'):
+            cache_control = header
+            break
+    
+    max_age = None
+    if cache_control:
+        for directive in cache_control.split(','):
+            if 'max-age' in directive:
+                max_age = int(directive.split('=')[1].strip())
+                break
+    
+    # Cache the response based on max-age if it exists
+    if max_age is not None:
+        cacheFile = open(cacheLocation, 'wb')
+        cacheFile.write(body.encode('utf-8'))
+        cacheFile.close()
+        print(f'Cached response for {max_age} seconds.')
+    # ~~~~ END CODE INSERT ~~~~
+
+    # Send the response to the client
+    # ~~~~ INSERT CODE ~~~~
+    clientSocket.sendall(originServerResponse.encode())
+    # ~~~~ END CODE INSERT ~~~~
+
+    # Create a new file in the cache for the requested file.
+    cacheDir, file = os.path.split(cacheLocation)
+    print ('cached directory ' + cacheDir)
+    if not os.path.exists(cacheDir):
+      os.makedirs(cacheDir)
+    cacheFile = open(cacheLocation, 'wb')
+
+    # Save origin server response in the cache file
+    # ~~~~ INSERT CODE ~~~~
+    cacheFile.write(originServerResponse.encode())
+    # ~~~~ END CODE INSERT ~~~~
+    cacheFile.close()
+    print ('cache file closed')
+
+    # finished communicating with origin server - shutdown socket writes
+    print ('origin response received. Closing sockets')
+    originServerSocket.close()
       
-      # Check for Cache-Control header
-      cache_control = None
-      for header in headers.split('\r\n'):
-          if header.lower().startswith('cache-control:'):
-              cache_control = header
-              break
-      
-      max_age = None
-      if cache_control:
-          for directive in cache_control.split(','):
-              if 'max-age' in directive:
-                  max_age = int(directive.split('=')[1].strip())
-                  break
-      
-      # Cache the response based on max-age if it exists
-      if max_age is not None:
-          cacheFile = open(cacheLocation, 'wb')
-          cacheFile.write(body.encode('utf-8'))
-          cacheFile.close()
-          print(f'Cached response for {max_age} seconds.')
-      # ~~~~ END CODE INSERT ~~~~
+    clientSocket.shutdown(socket.SHUT_WR)
+    print ('client socket shutdown for writing')
 
-      # Send the response to the client
-      # ~~~~ INSERT CODE ~~~~
-      clientSocket.sendall(originServerResponse)
-      # ~~~~ END CODE INSERT ~~~~
+  except OSError as err:
+    print ('origin server request failed. ' + err.strerror)
 
-      # Create a new file in the cache for the requested file.
-      cacheDir, file = os.path.split(cacheLocation)
-      print ('cached directory ' + cacheDir)
-      if not os.path.exists(cacheDir):
-        os.makedirs(cacheDir)
-      cacheFile = open(cacheLocation, 'wb')
-
-      # Save origin server response in the cache file
-      # ~~~~ INSERT CODE ~~~~
-      cacheFile.write(originServerResponse)
-      # ~~~~ END CODE INSERT ~~~~
-      cacheFile.close()
-      print ('cache file closed')
-
-      # finished communicating with origin server - shutdown socket writes
-      print ('origin response received. Closing sockets')
-      originServerSocket.close()
-       
-      clientSocket.shutdown(socket.SHUT_WR)
-      print ('client socket shutdown for writing')
-    except OSError as err:
-      print ('origin server request failed. ' + err.strerror)
+  except Exception as e:  # <-- This is the missing except block for the first try!
+    print("\n*** General Error Occurred ***")
+    traceback.print_exc()
 
   try:
     clientSocket.close()
