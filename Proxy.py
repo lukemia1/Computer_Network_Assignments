@@ -112,29 +112,36 @@ while True:
   try:
     cacheLocation = './' + hostname + resource
     if cacheLocation.endswith('/'):
-        cacheLocation = cacheLocation + 'default'
+        cacheLocation += 'default'
 
     print ('Cache location:\t\t' + cacheLocation)
 
-    fileExists = os.path.isfile(cacheLocation)
+    cacheData = None
     
     # Check wether the file is currently in the cache
-    if not os.path.isfile(cacheLocation):
-        print(f"Cache file not found: {cacheLocation}")
-        raise FileNotFoundError(f"Cache file not found: {cacheLocation}")
-    cacheFile = open(cacheLocation, "r")
-    cacheData = cacheFile.readlines()
+    if os.path.isfile(cacheLocation):
+        try:    
+          with open(cacheLocation, "r") as cacheFile:
+            cacheData = cacheFile.read()
+          print ('Cache hit! Loading from cache file: ' + cacheLocation)
+        except IOError as e:
+           print(f"Error reading cache file: {e}")
+    else:
+      print(f"Cache file not found: {cacheLocation}")
 
-    print ('Cache hit! Loading from cache file: ' + cacheLocation)
+    
     # ProxyServer finds a cache hit
     # Send back response to client 
     # ~~~~ INSERT CODE ~~~~
-    response = b"HTTP/1.1 200 OK\r\n\r\n" + cacheData
-    clientSocket.sendall(response.encode())
+    if cacheData is not None:
+      response = "HTTP/1.1 200 OK\r\n\r\n" + cacheData
+      clientSocket.sendall(response.encode())
+      print ('Sent to the client:')
+      print ('> ' + cacheData)
+    else:
+       print("Cache miss: No cached response to send.")
     # ~~~~ END CODE INSERT ~~~~
-    cacheFile.close()
-    print ('Sent to the client:')
-    print ('> ' + cacheData)
+      
   except Exception as e:
     print("\n*** Cache Error Traceback ***")
     traceback.print_exc()  # Prints full traceback to stderr
@@ -181,7 +188,7 @@ while True:
           hostname = header.split(": ", 1)[1]  # Extract the hostname
         originServerRequestHeader += header + '\r\n'
       # ~~~~ END CODE INSERT ~~~~
-      
+
       # Construct the request to send to the origin server
       request = originServerRequest + '\r\n' + originServerRequestHeader + '\r\n'
 
