@@ -4,6 +4,8 @@ import sys
 import os
 import argparse
 import re
+import traceback
+
 
 # 1MB buffer size
 BUFFER_SIZE = 1000000
@@ -30,8 +32,6 @@ except:
 try:
   # Bind the the server socket to a host and port
   # ~~~~ INSERT CODE ~~~~
-  host = '0.0.0.0'
-  port = 31245
   server_socket.bind((proxyHost, proxyPort))
   # ~~~~ END CODE INSERT ~~~~
   print ('Port is bound')
@@ -67,14 +67,20 @@ while True:
   # Get HTTP request from client
   # and store it in the variable: message_bytes
   # ~~~~ INSERT CODE ~~~~
-  message_bytes = clientSocket.recv(4096)
+  message_bytes = clientSocket.recv(BUFFER_SIZE)
   # ~~~~ END CODE INSERT ~~~~
   message = message_bytes.decode('utf-8')
   print ('Received request:')
-  print ('< ' + message)
+  for line in message.split('\r\n'):
+    print('< ' + line)
+
+  lines = message.split('\r\n')
+  request_line = lines[0]  # First line is the request line
+  headers = lines[1:]  # The rest are headers
+
 
   # Extract the method, URI and version of the HTTP client request 
-  requestParts = message.split()
+  requestParts = request_line.split()
   method = requestParts[0]
   URI = requestParts[1]
   version = requestParts[2]
@@ -113,6 +119,9 @@ while True:
     fileExists = os.path.isfile(cacheLocation)
     
     # Check wether the file is currently in the cache
+    if not os.path.isfile(cacheLocation):
+        print(f"Cache file not found: {cacheLocation}")
+        raise FileNotFoundError(f"Cache file not found: {cacheLocation}")
     cacheFile = open(cacheLocation, "r")
     cacheData = cacheFile.readlines()
 
@@ -120,20 +129,35 @@ while True:
     # ProxyServer finds a cache hit
     # Send back response to client 
     # ~~~~ INSERT CODE ~~~~
-    response = "HTTP/1.1 200 OK" + cacheData
+    response = b"HTTP/1.1 200 OK\r\n\r\n" + cacheData
     clientSocket.sendall(response.encode())
     # ~~~~ END CODE INSERT ~~~~
     cacheFile.close()
     print ('Sent to the client:')
     print ('> ' + cacheData)
-  except:
+  except Exception as e:
+    print("\n*** Cache Error Traceback ***")
+    traceback.print_exc()  # Prints full traceback to stderr
+    
+    # Log detailed error (alternative to printing)
+    error_msg = f"Cache error at {cacheLocation}:\n{traceback.format_exc()}"
+    print(error_msg, file=sys.stderr)
+
+
     # cache miss.  Get resource from origin server
-    originServerSocket = None
+    # originServerSocket = None
     # Create a socket to connect to origin server
     # and store in originServerSocket
     # ~~~~ INSERT CODE ~~~~
-    originServerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+      originServerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+      print("Created new socket for origin server")
     # ~~~~ END CODE INSERT ~~~~
+
+    except Exception as socket_error:
+        print("\n*** Socket Creation Failed ***")
+        traceback.print_exc()
+        raise
 
     print ('Connecting to:\t\t' + hostname + '\n')
     try:
@@ -145,19 +169,21 @@ while True:
       # ~~~~ END CODE INSERT ~~~~
       print ('Connected to origin Server')
 
-      originServerRequest = ''
+      originServerRequest = request_line
       originServerRequestHeader = ''
       # Create origin server request line and headers to send
       # and store in originServerRequestHeader and originServerRequest
       # originServerRequest is the first line in the request and
       # originServerRequestHeader is the second line in the request
       # ~~~~ INSERT CODE ~~~~
-      originServerRequest = 'GET ' + resource + ' HTTP/1.1'
-      originServerRequestHeader = 'Host: ' + hostname
+      for header in headers:
+        if header.lower().startswith("host:"):
+          hostname = header.split(": ", 1)[1]  # Extract the hostname
+        originServerRequestHeader += header + '\r\n'
       # ~~~~ END CODE INSERT ~~~~
-
+      
       # Construct the request to send to the origin server
-      request = originServerRequest + '\r\n' + originServerRequestHeader + '\r\n\r\n'
+      request = originServerRequest + '\r\n' + originServerRequestHeader + '\r\n'
 
       # Request the web resource from origin server
       print ('Forwarding request to origin server:')
@@ -174,7 +200,29 @@ while True:
 
       # Get the response from the origin server
       # ~~~~ INSERT CODE ~~~~
-      originServerResponse = originServerSocket.recv(4096)
+      originServerResponse = originServerSocket.recv(4096).decode('utf-8')
+      headers, body = originServerResponse.split('\r\n\r\n', 1)
+      
+      # Check for Cache-Control header
+      cache_control = None
+      for header in headers.split('\r\n'):
+          if header.lower().startswith('cache-control:'):
+              cache_control = header
+              break
+      
+      max_age = None
+      if cache_control:
+          for directive in cache_control.split(','):
+              if 'max-age' in directive:
+                  max_age = int(directive.split('=')[1].strip())
+                  break
+      
+      # Cache the response based on max-age if it exists
+      if max_age is not None:
+          cacheFile = open(cacheLocation, 'wb')
+          cacheFile.write(body.encode('utf-8'))
+          cacheFile.close()
+          print(f'Cached response for {max_age} seconds.')
       # ~~~~ END CODE INSERT ~~~~
 
       # Send the response to the client
