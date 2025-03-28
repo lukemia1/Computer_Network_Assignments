@@ -223,6 +223,8 @@ while True:
         except Exception as e:
           print(f'Error caching file: {e}')
 
+
+
       max_age = None
       if cache_control:
         for directive in cache_control.split(','):
