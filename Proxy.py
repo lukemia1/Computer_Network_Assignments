@@ -10,6 +10,9 @@ import traceback
 # 1MB buffer size
 BUFFER_SIZE = 1000000
 
+#function to sanitize filenames with special characters
+def sanitize_filename(url):
+    return re.sub(r'[<>:"/\\|?*]', '_', url)
 
 
 # Get the IP address and Port number to use for this web proxy server
@@ -106,13 +109,16 @@ while True:
 
   print ('Requested Resource:\t' + resource)
 
+  
+
+
   # Check if resource is in cache
   try:
-    cacheLocation = './' + hostname + resource
-    if cacheLocation.endswith('/'):
-        cacheLocation = cacheLocation + 'default'
-    #print ('Cache location:\t\t' + cacheLocation)
-    fileExists = os.path.isfile(cacheLocation)
+    cacheLocation = './' + hostname + '/' + sanitize_filename(resource)
+    if cacheLocation.endswith('/'): 
+        cacheLocation += 'default'
+
+    os.makedirs(os.path.dirname(cacheLocation), exist_ok=True)   
 
     # Check wether the file is currently in the cache
     with open(cacheLocation, "r") as cacheFile:
@@ -194,11 +200,29 @@ while True:
 
       # Check for Cache-Control header
       cache_control = None
+
       for header in headers.split('\r\n'):
           if header.lower().startswith('cache-control:'):
             cache_control = header
             break
-      
+
+      if status_code in [200, 301]:
+        if not cache_control:
+        # Add Cache-Control header if not present
+          cache_control = 'Cache-Control: public, max-age=3600'  # 1-hour caching
+          headers += '\r\n' + cache_control
+
+
+      originServerResponse = headers + '\r\n\r\n' + body
+
+      if status_code in [200, 301]:
+        try:
+          with open(cacheLocation, 'wb') as cacheFile:
+            cacheFile.write(originServerResponse.encode())
+          print(f'Cached response for status {status_code}')
+        except Exception as e:
+          print(f'Error caching file: {e}')
+
       max_age = None
       if cache_control:
         for directive in cache_control.split(','):
