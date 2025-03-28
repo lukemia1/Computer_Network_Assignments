@@ -5,15 +5,18 @@ import os
 import argparse
 import re
 import traceback
+from datetime import datetime, timedelta
 
 
 # 1MB buffer size
 BUFFER_SIZE = 1000000
 
-#function to sanitize filenames with special characters
-def sanitize_filename(url):
-    return re.sub(r'[<>:"/\\|?*]', '_', url)
-
+def get_max_age(cache_control_header):
+    match = re.search(r'max-age=(\d+)', cache_control_header)
+    if match:
+        return int(match.group(1))  # Return max-age value in seconds
+    else:
+        return None
 
 # Get the IP address and Port number to use for this web proxy server
 parser = argparse.ArgumentParser()
@@ -109,12 +112,10 @@ while True:
 
   print ('Requested Resource:\t' + resource)
 
-  
-
 
   # Check if resource is in cache
   try:
-    cacheLocation = './' + hostname + '/' + sanitize_filename(resource)
+    cacheLocation = './' + hostname + resource
     if cacheLocation.endswith('/'): 
         cacheLocation += 'default'
 
@@ -129,6 +130,26 @@ while True:
     # ProxyServer finds a cache hit
     # Send back response to client 
     # ~~~~ INSERT CODE ~~~~
+    cache_control = None
+    for line in cacheData.split('\r\n'):
+        if line.lower().startswith('cache-control:'):
+            cache_control = line
+
+    if max_age is not None:
+        # Check the cache expiration time using datetime
+        cache_timestamp = os.path.getmtime(cacheLocation)
+        cache_time = datetime.fromtimestamp(cache_timestamp)
+        expiration_time = cache_time + timedelta(seconds=max_age)
+        current_time = datetime.now()
+        print (f'Current time is:')
+        print(current_time)
+
+        if current_time > expiration_time:
+            print(f"Cache expired (max-age: {max_age} seconds), fetching new resource")
+            raise FileNotFoundError("Cache expired")
+
+
+
     clientSocket.sendall(cacheData.encode())
 
     # ~~~~ END CODE INSERT ~~~~
@@ -223,20 +244,20 @@ while True:
         except Exception as e:
           print(f'Error caching file: {e}')
 
-
-
       max_age = None
       if cache_control:
         for directive in cache_control.split(','):
             if 'max-age' in directive:
                 max_age = int(directive.split('=')[1].strip())
+                #print(max_age)
                 break
       
       # Cache the response based on max-age if it exists
       if max_age is not None:
           with open(cacheLocation, 'wb') as cacheFile:
+            cacheFile.write(f"Max-Age: {max_age}\r\n".encode('utf-8'))
             cacheFile.write(body.encode('utf-8'))
-          print(f'Cached response for {max_age} seconds.')
+          print(f'Cached response with max-age={max_age} seconds.')
 
             # Send the response to the client
         # ~~~~ INSERT CODE ~~~~
