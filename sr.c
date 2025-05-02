@@ -146,11 +146,50 @@ void A_input(struct pkt packet)
               printf("----A: ACK %d is not a duplicate\n",packet.acknum);
             new_ACKs++;
 
-            /* cumulative acknowledgement - determine how many packets are ACKed */
-            if (packet.acknum >= seqfirst)
+            lastACK=packet.acknum;
+
+            /*SR requires individual packets to be checked*/
+            if (packet.acknum != seqfirst)
+            {           
+              /* change pkt seqnum to -1 to marked as received if a match is found*/
+              for (i = 1; i < windowcount; i++)
+              { 
+                if (buffer[(windowfirst+i) % WINDOWSIZE].seqnum == packet.acknum)
+                {
+                  buffer[(windowfirst+i) % WINDOWSIZE].seqnum = -1;
+                }
+              }     
+            }
+            
+            /*If the packet ack is equal to the seqfirst of sender window*/
+            if (packet.acknum == seqfirst)
+            { 
+                /*initialize so the base packet is acknowledged*/
               ackcount = packet.acknum + 1 - seqfirst;
-            else
-              ackcount = SEQSPACE - seqfirst + packet.acknum;
+              
+              /* check the following pkt after the first one in the window */         
+              for (i = 1; i < windowcount; i++)
+              {
+                /*check if packet has already been acknowledged*/
+                /*count all consecutively acked packets*/
+                if ((buffer[(windowfirst+i) % WINDOWSIZE]).seqnum == -1)
+                {
+                  resackcount += 1;
+                  /*if a packet has not been acknowledged stop counting*/
+                } else {
+                  break;
+                }
+              }
+              
+              /* check if any pkt after the 1st pkt (pkt no. must be in order) received ACK already: then extend ackcount and reset reserve_ackcount */
+              if (resackcount != 0)
+              {
+                /* if any slide the window in number of 1 (windowfirst) + pkt after windowfirstreceived ACK */
+                ackcount = ackcount + resackcount;
+                resackcount = 0;
+              }
+              
+            }
 
 	    /* slide window by the number of packets ACKed */
             windowfirst = (windowfirst + ackcount) % WINDOWSIZE;
@@ -160,9 +199,14 @@ void A_input(struct pkt packet)
               windowcount--;
 
 	    /* start timer again if there are still more unacked packets in window */
-            stoptimer(A);
-            if (windowcount > 0)
-              starttimer(A, RTT);
+            if(packet.acknum==seqfirst)
+            {
+                stoptimer(A);
+                if (windowcount > 0)
+                {
+                starttimer(A, RTT);
+                }
+            }
 
           }
         }
