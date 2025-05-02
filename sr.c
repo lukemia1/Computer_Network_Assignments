@@ -71,6 +71,9 @@ static int windowfirst, windowlast;    /* array indexes of the first/last packet
 static int windowcount;                /* the number of packets currently awaiting an ACK */
 static int A_nextseqnum;               /* the next sequence number to be used by the sender */
 
+static int resackcount;                 /*created a variable to remember how many pa ckets after the first packet have recieved ACK*/
+static int lastACK;                     /*variable to remember the last packet that received ACK*/
+
 /* called from layer 5 (application layer), passed the message to be sent to other side */
 void A_output(struct msg message)
 {
